@@ -9,133 +9,57 @@ load_dotenv()
 api_key = os.getenv("NVIDIA_API_KEY")
 
 # Streamlit UI setup
-st.set_page_config(page_title="Stress Management Q&A Assistant")
+st.set_page_config(page_title="Conversational Q&A Chatbot")
+st.header("Welcome! Let's Talk About Managing Stress")
 
-# Custom CSS with animations and layout
-st.markdown(
-    """
-    <style>
-    .chat-container {
-        width: 400px;
-        padding: 20px;
-        background-color: #f1f1f1;
-        border-radius: 10px;
-        box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        max-height: 80vh;
-        overflow-y: auto;
-    }
-
-    .header {
-        animation: slideIn 1s ease-in-out;
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #4CAF50;
-        text-align: center;
-        margin-bottom: 10px;
-    }
-
-    .chat-history {
-        margin-bottom: 10px;
-        max-height: 60vh;
-        overflow-y: auto;
-    }
-
-    .input-box {
-        width: 100%;
-        padding: 10px;
-        border-radius: 5px;
-        border: 1px solid #ccc;
-        margin-bottom: 10px;
-    }
-
-    .button {
-        width: 100%;
-        animation: fadeIn 1s ease-in-out;
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-        border-radius: 5px;
-    }
-    
-    .button:hover {
-        background-color: #45a049;
-    }
-
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-        }
-        to {
-            opacity: 1;
-        }
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
+# Initialize the OpenAI client
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=api_key
 )
 
-# HTML structure for the chat interface
-st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-st.markdown('<div class="header">Stress Management Q&A</div>', unsafe_allow_html=True)
-
-# Chat history container
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-
-for chat in st.session_state.chat_history:
-    st.markdown(f'<div class="chat-history">{chat}</div>', unsafe_allow_html=True)
-
-# Streamlit input and button setup using standard Streamlit widgets
-input_text = st.text_input("", key="input", placeholder="Type your question here...")
-submit = st.button("Get Advice", key="submit")
-
-def get_response(question):
-    client = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=api_key
-    )
+# Function to get response from the API considering the conversation history
+def get_response(conversation_history):
     completion = client.chat.completions.create(
         model="mistralai/mistral-large",
-        messages=[{"role": "user", "content": question}],
+        messages=conversation_history,
         temperature=0.0,
         top_p=1,
         max_tokens=512,
         stream=True
     )
+
+    # Collect the chunks of response text
     response_text = ""
     for chunk in completion:
         response_text += chunk.choices[0].delta.content
 
     return response_text
 
-# Handle button click
-if submit:
-    if input_text:
-        st.session_state.chat_history.append(f"You: {input_text}")
-        response = get_response(input_text)
-        st.session_state.chat_history.append(f"Bot: {response}")
-        
-        # Instead of using st.experimental_rerun(), we clear the input field manually
-        st.query_params()
-    else:
-        st.error("Please enter a question about stress.")
+# Initialize session state for storing chat history
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = []
 
-st.markdown('</div>', unsafe_allow_html=True)
+# Input box for the user's query
+user_input = st.text_input("You: ", key="input", on_change=lambda: st.session_state.update({"input_value": st.session_state.input}))
+
+# Automatically send the message when input is detected (continuous chat)
+if user_input:
+    # Append the user's message to the conversation history
+    st.session_state["chat_history"].append({"role": "user", "content": user_input})
+
+    # Get the response from the API considering the entire conversation history
+    response = get_response(st.session_state["chat_history"])
+
+    # Append the bot's response to the conversation history
+    st.session_state["chat_history"].append({"role": "assistant", "content": response})
+
+    # Clear the input box for the next query
+    st.session_state["input_value"] = ""
+
+# Display the conversation history
+st.subheader("Chat History")
+for chat in st.session_state["chat_history"]:
+    role = "You" if chat["role"] == "user" else "Bot"
+    st.write(f"{role}: {chat['content']}")
+    st.write("---")
